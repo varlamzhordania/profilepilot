@@ -1,0 +1,86 @@
+{
+  "entities": {
+    "CreditAccount": {
+      "title": "Credit Account",
+      "description": "Stores user credit balance keyed securely by Firebase Auth UID",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Immutable Firebase Auth User ID" },
+        "balance": { "type": "number", "description": "Current available credit balance" },
+        "totalPurchased": { "type": "number", "description": "Total credits ever purchased" },
+        "totalUsed": { "type": "number", "description": "Total credits consumed" },
+        "createdAt": { "type": "string", "description": "Creation timestamp" },
+        "updatedAt": { "type": "string", "description": "Last update timestamp" }
+      },
+      "required": ["uid", "balance"]
+    },
+    "RazorpayOrder": {
+      "title": "Razorpay Payment Order",
+      "description": "Stores Razorpay payment orders linked to Firebase Auth UID",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Authenticated Firebase User ID" },
+        "packageId": { "type": "string", "description": "Package identifier" },
+        "creditsToAdd": { "type": "number", "description": "Number of credits to grant upon payment verification" },
+        "amount": { "type": "number", "description": "Order amount in currency units" },
+        "currency": { "type": "string", "description": "Currency code (e.g. INR)" },
+        "razorpayOrderId": { "type": "string", "description": "Razorpay order ID" },
+        "status": { "type": "string", "enum": ["created", "paid", "failed", "refunded"] },
+        "credited": { "type": "boolean", "description": "Flag indicating if credits were added" },
+        "razorpayPaymentId": { "type": "string", "description": "Razorpay payment transaction ID" },
+        "createdAt": { "type": "string", "description": "Order creation timestamp" },
+        "paidAt": { "type": "string", "description": "Payment timestamp" }
+      },
+      "required": ["uid", "packageId", "creditsToAdd", "amount", "razorpayOrderId", "status", "credited"]
+    },
+    "CreditTransaction": {
+      "title": "Credit Transaction Audit Log",
+      "description": "Immutable transaction history for purchases and credit usage",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Target Firebase Auth User ID" },
+        "type": { "type": "string", "enum": ["purchase", "image_generation", "profile_analysis", "coach_message", "refund", "admin_adjustment"] },
+        "amount": { "type": "number", "description": "Delta amount (+ or -)" },
+        "balanceBefore": { "type": "number", "description": "Balance prior to transaction" },
+        "balanceAfter": { "type": "number", "description": "Balance after transaction" },
+        "razorpayOrderId": { "type": "string", "description": "Associated Razorpay order ID if purchase" },
+        "razorpayPaymentId": { "type": "string", "description": "Associated Razorpay payment ID if purchase" },
+        "referenceId": { "type": "string", "description": "Optional reference ID" },
+        "createdAt": { "type": "string", "description": "Transaction timestamp" }
+      },
+      "required": ["uid", "type", "amount", "balanceBefore", "balanceAfter"]
+    },
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "Basic user profile and preferences",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "hasAcceptedTerms": { "type": "boolean" },
+        "acceptedTermsAt": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["uid", "email"]
+    }
+  },
+  "firestore": {
+    "/creditAccounts/{uid}": {
+      "schema": { "$ref": "#/entities/CreditAccount" },
+      "description": "User credit balances by UID"
+    },
+    "/razorpayOrders/{orderId}": {
+      "schema": { "$ref": "#/entities/RazorpayOrder" },
+      "description": "Razorpay order records"
+    },
+    "/creditTransactions/{transactionId}": {
+      "schema": { "$ref": "#/entities/CreditTransaction" },
+      "description": "Transaction log entries"
+    },
+    "/users/{uid}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "User account profiles"
+    }
+  }
+}

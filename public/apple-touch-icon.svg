@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="180" height="180">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0F172A" />
+      <stop offset="50%" stop-color="#1E293B" />
+      <stop offset="100%" stop-color="#0284C7" />
+    </linearGradient>
+    <linearGradient id="heartGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#EC4899" />
+      <stop offset="50%" stop-color="#F43F5E" />
+      <stop offset="100%" stop-color="#E11D48" />
+    </linearGradient>
+    <linearGradient id="jetGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38BDF8" />
+      <stop offset="100%" stop-color="#0284C7" />
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bgGrad)" />
+  <circle cx="256" cy="256" r="190" fill="none" stroke="rgba(56, 189, 248, 0.2)" stroke-width="12" />
+  <circle cx="256" cy="256" r="150" fill="none" stroke="rgba(236, 72, 153, 0.25)" stroke-width="8" stroke-dasharray="16 12" />
+  <path d="M256 390 C180 320 120 260 120 195 C120 145 158 110 205 110 C232 110 248 122 256 134 C264 122 280 110 307 110 C354 110 392 145 392 195 C392 260 332 320 256 390 Z" fill="url(#heartGrad)" />
+  <path d="M220 280 L350 160 L270 310 L245 270 Z" fill="#FFFFFF" opacity="0.95" />
+  <path d="M350 160 L245 270 L180 235 Z" fill="url(#jetGrad)" />
+  <path d="M245 270 L270 310 L255 335 Z" fill="#F97316" />
+</svg>

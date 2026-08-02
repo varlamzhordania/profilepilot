@@ -1,0 +1,14 @@
+# ProfilePilot Technical SEO Robots Directive
+User-agent: *
+Allow: /
+Allow: /manifest.json
+Allow: /sw.js
+Allow: /sitemap.xml
+Allow: /api/
+Disallow: /admin/
+
+# Search Engine Crawl Rate
+Crawl-delay: 1
+
+# Sitemap Location
+Sitemap: https://ais-pre-d5nt4dkchy5gygjytw57gz-530163131826.asia-southeast1.run.app/sitemap.xml

@@ -1,0 +1,115 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --background: #ffffff;
+    --surface: #f8fafc;
+    --text-primary: #0f172a;
+    --text-secondary: #334155;
+    --input-bg: #ffffff;
+    --input-text: #0f172a;
+    --input-placeholder: #64748b;
+    --input-border: #cbd5e1;
+    --input-focus-border: #e11d48;
+    --input-focus-ring: rgba(225, 29, 72, 0.25);
+    --option-bg: #ffffff;
+    --option-text: #0f172a;
+  }
+
+  html.dark {
+    --background: #020617;
+    --surface: #0f172a;
+    --text-primary: #ffffff;
+    --text-secondary: #94a3b8;
+    --input-bg: #0f172a;
+    --input-text: #ffffff;
+    --input-placeholder: #64748b;
+    --input-border: #334155;
+    --input-focus-border: #f43f5e;
+    --input-focus-ring: rgba(244, 63, 94, 0.35);
+    --option-bg: #0f172a;
+    --option-text: #ffffff;
+  }
+
+  body {
+    background-color: var(--background);
+    color: var(--text-primary);
+  }
+
+  /* Form Elements Universal High Contrast Rules */
+  input,
+  textarea,
+  select {
+    color: var(--input-text) !important;
+    background-color: var(--input-bg);
+    border-color: var(--input-border);
+  }
+
+  /* Universal Light Mode Input Override */
+  html:not(.dark) input,
+  html:not(.dark) textarea,
+  html:not(.dark) select {
+    color: #0f172a !important;
+    background-color: #ffffff !important;
+    border-color: #cbd5e1 !important;
+  }
+
+  /* Universal Dark Mode Input Override */
+  html.dark input,
+  html.dark textarea,
+  html.dark select {
+    color: #ffffff !important;
+    background-color: #0f172a !important;
+    border-color: #334155 !important;
+  }
+
+  /* Placeholder Styling across Browsers */
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--input-placeholder) !important;
+    opacity: 1 !important;
+  }
+
+  html:not(.dark) input::placeholder,
+  html:not(.dark) textarea::placeholder {
+    color: #64748b !important;
+  }
+
+  html.dark input::placeholder,
+  html.dark textarea::placeholder {
+    color: #94a3b8 !important;
+  }
+
+  /* Dropdown Options Styling for OS/Native Select Popups */
+  select option {
+    background-color: var(--option-bg) !important;
+    color: var(--option-text) !important;
+    padding: 8px 12px;
+  }
+
+  /* Browser Autofill Fix - Prevents Chrome/Safari yellow/dark unreadable background overrides */
+  input:-webkit-autofill,
+  input:-webkit-autofill:hover,
+  input:-webkit-autofill:focus,
+  textarea:-webkit-autofill,
+  textarea:-webkit-autofill:hover,
+  textarea:-webkit-autofill:focus,
+  select:-webkit-autofill,
+  select:-webkit-autofill:hover,
+  select:-webkit-autofill:focus {
+    -webkit-text-fill-color: var(--input-text) !important;
+    -webkit-box-shadow: 0 0 0px 1000px var(--input-bg) inset !important;
+    box-shadow: 0 0 0px 1000px var(--input-bg) inset !important;
+    transition: background-color 5000s ease-in-out 0s;
+  }
+
+  /* Focus ring accessibility indicator */
+  input:focus-visible,
+  textarea:focus-visible,
+  select:focus-visible {
+    outline: none;
+    border-color: var(--input-focus-border) !important;
+    box-shadow: 0 0 0 3px var(--input-focus-ring) !important;
+  }
+}
+

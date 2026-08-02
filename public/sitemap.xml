@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+        xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">
+  <!-- Root Home / Overview -->
+  <url>
+    <loc>https://ais-pre-d5nt4dkchy5gygjytw57gz-530163131826.asia-southeast1.run.app/</loc>
+    <lastmod>2026-07-27</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>1.00</priority>
+    <image:image>
+      <image:loc>https://ais-pre-d5nt4dkchy5gygjytw57gz-530163131826.asia-southeast1.run.app/pwa-512x512.svg</image:loc>
+      <image:title>ProfilePilot AI Dating Wingman</image:title>
+      <image:caption>AI Dating Profile Optimizer and Chat Screenshot Analyzer</image:caption>
+    </image:image>
+  </url>
+
+  <!-- 1. AI Coach Chatbot Route (/chat) -->
+  <url>
+    <loc>https://ais-pre-d5nt4dkchy5gygjytw57gz-530163131826.asia-southeast1.run.app/chat</loc>
+    <lastmod>2026-07-27</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.90</priority>
+  </url>
+  <url>
+    <loc>https://ais-pre-d5nt4dkchy5gygjytw57gz-530163131826.asia-southeast1.run.app/?tab=chat</loc>
+    <lastmod>2026-07-27</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.85</priority>
+  </url>
+
+  <!-- 2. AI Photo Studio Route (/photos) -->
+  <url>
+    <loc>https://ais-pre-d5nt4dkchy5gygjytw57gz-530163131826.asia-southeast1.run.app/photos</loc>
+    <lastmod>2026-07-27</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.90</priority>
+  </url>
+  <url>
+    <loc>https://ais-pre-d5nt4dkchy5gygjytw57gz-530163131826.asia-southeast1.run.app/?tab=photos</loc>
+    <lastmod>2026-07-27</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.85</priority>
+  </url>
+
+  <!-- 3. Prompts Lab & Bio Rewriter Route (/prompts) -->
+  <url>
+    <loc>https://ais-pre-d5nt4dkchy5gygjytw57gz-530163131826.asia-southeast1.run.app/prompts</loc>
+    <lastmod>2026-07-27</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.85</priority>
+  </url>
+  <url>
+    <loc>https://ais-pre-d5nt4dkchy5gygjytw57gz-530163131826.asia-southeast1.run.app/?tab=prompts</loc>
+    <lastmod>2026-07-27</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.80</priority>
+  </url>
+
+  <!-- 4. History & Activity Logs Route (/history) -->
+  <url>
+    <loc>https://ais-pre-d5nt4dkchy5gygjytw57gz-530163131826.asia-southeast1.run.app/history</loc>
+    <lastmod>2026-07-27</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.75</priority>
+  </url>
+  <url>
+    <loc>https://ais-pre-d5nt4dkchy5gygjytw57gz-530163131826.asia-southeast1.run.app/?tab=history</loc>
+    <lastmod>2026-07-27</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.70</priority>
+  </url>
+
+  <!-- 5. Analytics & Telemetry Dashboard Route (/analytics) -->
+  <url>
+    <loc>https://ais-pre-d5nt4dkchy5gygjytw57gz-530163131826.asia-southeast1.run.app/analytics</loc>
+    <lastmod>2026-07-27</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.70</priority>
+  </url>
+  <url>
+    <loc>https://ais-pre-d5nt4dkchy5gygjytw57gz-530163131826.asia-southeast1.run.app/?tab=analytics</loc>
+    <lastmod>2026-07-27</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.65</priority>
+  </url>
+
+  <!-- 6. Appeals & Ban Advisory Route (/appeals) -->
+  <url>
+    <loc>https://ais-pre-d5nt4dkchy5gygjytw57gz-530163131826.asia-southeast1.run.app/appeals</loc>
+    <lastmod>2026-07-27</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.70</priority>
+  </url>
+  <url>
+    <loc>https://ais-pre-d5nt4dkchy5gygjytw57gz-530163131826.asia-southeast1.run.app/?tab=appeals</loc>
+    <lastmod>2026-07-27</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.65</priority>
+  </url>
+
+  <!-- 7. Screenshot & Chat Scanner Route (/scanner) -->
+  <url>
+    <loc>https://ais-pre-d5nt4dkchy5gygjytw57gz-530163131826.asia-southeast1.run.app/scanner</loc>
+    <lastmod>2026-07-27</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.95</priority>
+  </url>
+
+  <!-- 8. Inspire Success Feed Route (/inspire) -->
+  <url>
+    <loc>https://ais-pre-d5nt4dkchy5gygjytw57gz-530163131826.asia-southeast1.run.app/inspire</loc>
+    <lastmod>2026-07-27</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.90</priority>
+  </url>
+
+  <!-- 9. AI Profile Feedback Route (/feedback) -->
+  <url>
+    <loc>https://ais-pre-d5nt4dkchy5gygjytw57gz-530163131826.asia-southeast1.run.app/feedback</loc>
+    <lastmod>2026-07-27</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.80</priority>
+  </url>
+
+  <!-- 10. Icebreaker Cards Studio Route (/studio) -->
+  <url>
+    <loc>https://ais-pre-d5nt4dkchy5gygjytw57gz-530163131826.asia-southeast1.run.app/studio</loc>
+    <lastmod>2026-07-27</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.80</priority>
+  </url>
+
+  <!-- 11. Legal & Terms Route (/legal) -->
+  <url>
+    <loc>https://ais-pre-d5nt4dkchy5gygjytw57gz-530163131826.asia-southeast1.run.app/legal</loc>
+    <lastmod>2026-07-27</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.50</priority>
+  </url>
+</urlset>

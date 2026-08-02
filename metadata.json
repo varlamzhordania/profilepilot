@@ -1,0 +1,6 @@
+{
+  "name": "Profilepilot",
+  "description": "AI-powered dating coach and multimodal visual icebreaker card generator with real-time vibe analysis, response suggestions, and credit management.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

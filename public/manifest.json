@@ -1,0 +1,46 @@
+{
+  "name": "ProfilePilot - AI Dating Wingman & Icebreaker Studio",
+  "short_name": "ProfilePilot",
+  "description": "AI Dating Profile Optimizer, Screenshot Analyzer, Photo Studio & Icebreaker Assistant for Hinge, Tinder, Bumble & Instagram.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0F172A",
+  "theme_color": "#0F172A",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/pwa-192x192.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/pwa-512x512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/apple-touch-icon.svg",
+      "sizes": "180x180",
+      "type": "image/svg+xml"
+    }
+  ],
+  "categories": ["lifestyle", "social", "utilities"],
+  "shortcuts": [
+    {
+      "name": "Chat Scanner",
+      "short_name": "Scanner",
+      "description": "Analyze dating app screenshot",
+      "url": "/?tab=scanner",
+      "icons": [{ "src": "/pwa-192x192.svg", "sizes": "192x192" }]
+    },
+    {
+      "name": "AI Coach Chat",
+      "short_name": "AI Coach",
+      "description": "Chat with AI Dating Coach",
+      "url": "/?tab=chat",
+      "icons": [{ "src": "/pwa-192x192.svg", "sizes": "192x192" }]
+    }
+  ]
+}
