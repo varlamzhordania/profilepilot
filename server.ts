@@ -1,4 +1,6 @@
-import "dotenv/config";
+import dotenv from "dotenv";
+dotenv.config({ path: ".env.local" });
+dotenv.config(); // fallback to default .env if present
 import express from "express";
 import path from "path";
 import crypto from "crypto";
@@ -14,6 +16,9 @@ import fs from "fs";
 import firebaseConfigJson from "./firebase-applet-config.json" with { type: "json" };
 import { AnalysisResult, AnalyticsEvent, SystemMetrics, InspireStory } from "./src/types.js";
 import { INITIAL_INSPIRE_STORIES } from "./src/data/inspireStories.js";
+import {
+  SERVER_PACKAGE_MAP,
+} from "./src/constants/packages.js";
 
 // Process-level unhandled rejection guard to prevent server process crash
 process.on("unhandledRejection", (reason, promise) => {
@@ -40,6 +45,7 @@ if (!getApps().length) {
 
 // Admin SDK connects to default database instance, with fallback to customDbId if needed
 export const adminDb = getFirestore();
+adminDb.settings({ ignoreUndefinedProperties: true });
 export const adminAuth = getAuth();
 
 // Initialize Gemini Client
@@ -51,30 +57,6 @@ const ai = new GoogleGenAI({
     },
   },
 });
-
-// ================= SERVER PACKAGE MAP (SOURCE OF TRUTH) =================
-export const SERVER_PACKAGE_MAP: Record<string, { amountINR: number; credits: number; name: string }> = {
-  starter_refill: {
-    amountINR: 399, // ₹399 INR
-    credits: 45,
-    name: "Starter Refill Pack",
-  },
-  starter: {
-    amountINR: 399,
-    credits: 45,
-    name: "Starter Refill Pack",
-  },
-  pro_wingman: {
-    amountINR: 799, // ₹799 INR
-    credits: 110,
-    name: "Pro Wingman Pack",
-  },
-  ultimate_rizz: {
-    amountINR: 1599, // ₹1599 INR
-    credits: 250,
-    name: "Ultimate Rizz Pass",
-  },
-};
 
 // ================= AUTHENTICATION MIDDLEWARE =================
 export interface AuthUser {
@@ -392,6 +374,23 @@ export async function fulfillRazorpayOrder(
   const orderRef = adminDb.collection("razorpayOrders").doc(razorpayOrderId);
   const paymentTxRef = adminDb.collection("creditTransactions").doc(`razorpay_payment_${razorpayPaymentId}`);
 
+  // Check fallback store first for idempotency
+  const fallbackOrder = fallbackRazorpayOrders.get(razorpayOrderId);
+  if (
+    fallbackOrder &&
+    (fallbackOrder.credited === true ||
+      fallbackOrder.lastFulfilledPaymentId === razorpayPaymentId)
+  ) {
+    const targetUid = fallbackOrder.uid || authenticatedUid || "test_user_a";
+    const fallbackAcc = fallbackCreditAccounts.get(targetUid);
+    return {
+      success: true,
+      creditsAdded: 0,
+      newBalance: fallbackAcc ? fallbackAcc.balance : 0,
+      alreadyProcessed: true,
+    };
+  }
+
   let creditsAdded = 0;
   let newBalance = 0;
   let isAlreadyProcessed = false;
@@ -405,36 +404,39 @@ export async function fulfillRazorpayOrder(
 
       const orderData = orderSnap.data()!;
 
-      // Requirement 6 & 9: Confirm that stored order UID equals the authenticated UID
+      // Requirement: Confirm that stored order UID equals the authenticated UID
       if (authenticatedUid && orderData.uid !== authenticatedUid) {
         throw new Error(`This payment belongs to a different ProfilePilot account. Sign in using the account that started the purchase.`);
       }
 
-      // Requirement 8: Check Idempotency - if order is already credited or status is paid, return early without re-crediting
-      if (orderData.credited === true || orderData.status === "paid") {
+      const targetUid = orderData.uid;
+      const creditAccountRef = adminDb.collection("creditAccounts").doc(targetUid);
+
+      // Read both transaction record and credit account within the same transaction to guarantee consistency
+      const [paymentTxSnap, creditAccountSnap] = await Promise.all([
+        transaction.get(paymentTxRef),
+        transaction.get(creditAccountRef),
+      ]);
+
+      // Requirement: Check Idempotency - if order is already credited, return early without re-crediting
+      if (orderData.credited === true) {
         isAlreadyProcessed = true;
-        const userRef = adminDb.collection("creditAccounts").doc(orderData.uid);
-        const userSnap = await transaction.get(userRef);
-        newBalance = userSnap.exists ? (userSnap.data()!.balance || 0) : 0;
-        creditsAdded = orderData.creditsToAdd || 0;
+        newBalance = creditAccountSnap.exists ? (creditAccountSnap.data()!.balance || 0) : 0;
+        creditsAdded = 0;
         return;
       }
 
       // Check transaction record ID to prevent re-crediting same payment ID
-      const paymentTxSnap = await transaction.get(paymentTxRef);
       if (paymentTxSnap.exists) {
         isAlreadyProcessed = true;
-        const userRef = adminDb.collection("creditAccounts").doc(orderData.uid);
-        const userSnap = await transaction.get(userRef);
-        newBalance = userSnap.exists ? (userSnap.data()!.balance || 0) : 0;
-        creditsAdded = orderData.creditsToAdd || 0;
+        newBalance = creditAccountSnap.exists ? (creditAccountSnap.data()!.balance || 0) : 0;
+        creditsAdded = 0;
         return;
       }
 
-      const targetUid = orderData.uid;
       creditsAdded = typeof orderData.creditsToAdd === "number" ? orderData.creditsToAdd : 0;
 
-      // Update Razorpay order status
+      // Update Razorpay order status atomically within transaction
       transaction.update(orderRef, {
         status: "paid",
         credited: true,
@@ -442,10 +444,7 @@ export async function fulfillRazorpayOrder(
         paidAt: FieldValue.serverTimestamp(),
       });
 
-      // Update User Credit Account atomically
-      const creditAccountRef = adminDb.collection("creditAccounts").doc(targetUid);
-      const creditAccountSnap = await transaction.get(creditAccountRef);
-
+      // Calculate new balance atomically
       let currentBalance = 0;
       let totalPurchased = 0;
       let totalUsed = 0;
@@ -469,9 +468,6 @@ export async function fulfillRazorpayOrder(
           totalPurchased: updatedTotalPurchased,
           totalUsed: totalUsed,
           updatedAt: FieldValue.serverTimestamp(),
-          createdAt: creditAccountSnap.exists
-            ? creditAccountSnap.data()!.createdAt || FieldValue.serverTimestamp()
-            : FieldValue.serverTimestamp(),
         },
         { merge: true }
       );
@@ -491,11 +487,21 @@ export async function fulfillRazorpayOrder(
       });
     });
 
-    logTelemetry("credit_purchased", `Razorpay Order ${razorpayOrderId} fulfilled! Added +${creditsAdded} credits to UID ${authenticatedUid || 'webhook'}.`);
+    // Mark fallback in-memory order as credited immediately
+    if (fallbackOrder) {
+      fallbackOrder.credited = true;
+      fallbackOrder.status = "paid";
+      fallbackOrder.razorpayPaymentId = razorpayPaymentId;
+      fallbackOrder.lastFulfilledPaymentId = razorpayPaymentId;
+    }
+
+    if (!isAlreadyProcessed) {
+      logTelemetry("credit_purchased", `Razorpay Order ${razorpayOrderId} fulfilled! Added +${creditsAdded} credits to UID ${authenticatedUid || 'webhook'}.`);
+    }
 
     return {
       success: true,
-      creditsAdded,
+      creditsAdded: isAlreadyProcessed ? 0 : creditsAdded,
       newBalance,
       alreadyProcessed: isAlreadyProcessed,
     };
@@ -512,8 +518,7 @@ export async function fulfillRazorpayOrder(
       };
     }
 
-    // Check fallback in-memory order cache (e.g. if Firestore was unavailable or returned 5 NOT_FOUND)
-    const fallbackOrder = fallbackRazorpayOrders.get(razorpayOrderId);
+    // Check fallback in-memory order cache
     if (fallbackOrder) {
       if (authenticatedUid && fallbackOrder.uid !== authenticatedUid) {
         return {
@@ -525,13 +530,22 @@ export async function fulfillRazorpayOrder(
       }
 
       const targetUid = fallbackOrder.uid || authenticatedUid || "test_user_a";
-      const creditsToAdd = typeof fallbackOrder.creditsToAdd === "number" ? fallbackOrder.creditsToAdd : 110;
-      const fallbackAcc: FallbackCreditAccount = fallbackCreditAccounts.get(targetUid) || { uid: targetUid, balance: 30, totalPurchased: 0, totalUsed: 0 };
+      const creditsToAdd = typeof fallbackOrder.creditsToAdd === "number" ? fallbackOrder.creditsToAdd : 45;
+      const fallbackAcc: FallbackCreditAccount = fallbackCreditAccounts.get(targetUid) || {
+        uid: targetUid,
+        balance: 30,
+        totalPurchased: 0,
+        totalUsed: 0,
+      };
 
-      if (fallbackOrder.credited === true || fallbackAcc.lastFulfilledPaymentId === razorpayPaymentId) {
+      if (
+        fallbackOrder.credited === true ||
+        fallbackOrder.lastFulfilledPaymentId === razorpayPaymentId ||
+        fallbackAcc.lastFulfilledPaymentId === razorpayPaymentId
+      ) {
         return {
           success: true,
-          creditsAdded: fallbackOrder.creditsToAdd || creditsToAdd,
+          creditsAdded: 0,
           newBalance: fallbackAcc.balance,
           alreadyProcessed: true,
         };
@@ -540,6 +554,7 @@ export async function fulfillRazorpayOrder(
       fallbackOrder.credited = true;
       fallbackOrder.status = "paid";
       fallbackOrder.razorpayPaymentId = razorpayPaymentId;
+      fallbackOrder.lastFulfilledPaymentId = razorpayPaymentId;
 
       fallbackAcc.lastFulfilledPaymentId = razorpayPaymentId;
       fallbackAcc.balance += creditsToAdd;
@@ -550,75 +565,19 @@ export async function fulfillRazorpayOrder(
 
       return {
         success: true,
-        creditsAdded,
+        creditsAdded: creditsToAdd,
         newBalance: fallbackAcc.balance,
       };
     }
-
-    if (errorMsg.includes("ORDER_NOT_FOUND")) {
-      if (authenticatedUid) {
-        // Fallback fulfillment if order was created before server restart
-        const targetUid = authenticatedUid;
-        const creditsToAdd = 110;
-        const fallbackAcc: FallbackCreditAccount = fallbackCreditAccounts.get(targetUid) || { uid: targetUid, balance: 30, totalPurchased: 0, totalUsed: 0 };
-
-        if (fallbackAcc.lastFulfilledPaymentId === razorpayPaymentId) {
-          return {
-            success: true,
-            creditsAdded: 0,
-            newBalance: fallbackAcc.balance,
-            alreadyProcessed: true,
-          };
-        }
-
-        fallbackAcc.lastFulfilledPaymentId = razorpayPaymentId;
-        fallbackAcc.balance += creditsToAdd;
-        fallbackAcc.totalPurchased += creditsToAdd;
-        fallbackCreditAccounts.set(targetUid, fallbackAcc);
-
-        return {
-          success: true,
-          creditsAdded,
-          newBalance: fallbackAcc.balance,
-        };
-      }
-
-      return {
-        success: false,
-        creditsAdded: 0,
-        newBalance: 0,
-        error: errorMsg,
-      };
-    }
-
-    // In-memory fallback if Firestore transaction fails (e.g. 5 NOT_FOUND)
-    const fallbackUid = authenticatedUid || "test_user_a";
-    const fallbackAcc: FallbackCreditAccount = fallbackCreditAccounts.get(fallbackUid) || { uid: fallbackUid, balance: 30, totalPurchased: 0, totalUsed: 0 };
-    const creditsToAdd = 110;
-
-    // Prevent duplicate fulfillment in fallback cache
-    if (fallbackAcc.lastFulfilledPaymentId === razorpayPaymentId) {
-      return {
-        success: true,
-        creditsAdded: 0,
-        newBalance: fallbackAcc.balance,
-        alreadyProcessed: true,
-      };
-    }
-
-    fallbackAcc.lastFulfilledPaymentId = razorpayPaymentId;
-    fallbackAcc.balance += creditsToAdd;
-    fallbackAcc.totalPurchased += creditsToAdd;
-    fallbackCreditAccounts.set(fallbackUid, fallbackAcc);
 
     return {
-      success: true,
-      creditsAdded: creditsToAdd,
-      newBalance: fallbackAcc.balance,
+      success: false,
+      creditsAdded: 0,
+      newBalance: 0,
+      error: errorMsg,
     };
   }
 }
-
 // Telemetry & Metrics Store
 let analyticsLogs: AnalyticsEvent[] = [
   {
@@ -803,6 +762,7 @@ app.post("/api/auth/welcome-email", optionalAuth, async (req, res) => {
     });
   }
 });
+
 
 // Web Push Notifications Store & Dispatch Endpoint
 const pushSubscriptionsStore: any[] = [];
@@ -1276,9 +1236,14 @@ Output strictly valid JSON matching this schema:
 // ================= RAZORPAY PAYMENT ENDPOINTS =================
 
 function getRazorpayInstance() {
-  const keyId = (process.env.RAZORPAY_KEY_ID || process.env.VITE_RAZORPAY_KEY_ID || "rzp_live_TIQmvp6HTSHaDs").trim();
-  const keySecret = (process.env.RAZORPAY_KEY_SECRET || "p9jFLown9a7twCpkhmY1dMeR").trim();
+  // const keyId = (process.env.RAZORPAY_KEY_ID || process.env.VITE_RAZORPAY_KEY_ID || "rzp_live_TIQmvp6HTSHaDs").trim();
+  // const keySecret = (process.env.RAZORPAY_KEY_SECRET || "p9jFLown9a7twCpkhmY1dMeR").trim();
+  const keyId = (process.env.RAZORPAY_KEY_ID || process.env.VITE_RAZORPAY_KEY_ID).trim();
+  const keySecret = (process.env.RAZORPAY_KEY_SECRET).trim();
   if (!keyId || !keySecret) {
+    console.log("coulndt find the keys")
+    console.log("key id",keyId)
+    console.log("key secret",keySecret)
     return null;
   }
   return {
@@ -1292,14 +1257,15 @@ function getRazorpayInstance() {
 }
 
 // Order Creation Endpoint (Requires Authenticated Firebase User Token)
+// Order Creation Endpoint (Requires Authenticated Firebase User Token)
 const handleCreateOrder = async (req: express.Request, res: express.Response) => {
   try {
     const authUser = getAuthUser(req);
     console.log(`[ORDER_CREATE_REQUEST_RECEIVED] Received order creation request from UID: ${authUser.uid}`);
-    console.log(`[AUTHENTICATION_VERIFIED] Authenticated UID: ${authUser.uid}, Email: ${authUser.email}`);
 
-    const { packageId: reqPackageId, packId, currency = "INR" } = req.body;
+    const { packageId: reqPackageId, packId, currency: reqCurrency = "INR" } = req.body;
     const requestedId = reqPackageId || packId;
+
 
     if (requestedId && !SERVER_PACKAGE_MAP[requestedId]) {
       console.warn(`[PACKAGE_VALIDATION_FAILED] Invalid packageId: ${requestedId}`);
@@ -1313,7 +1279,15 @@ const handleCreateOrder = async (req: express.Request, res: express.Response) =>
     const targetPackageId = requestedId || "pro_wingman";
     const pkg = SERVER_PACKAGE_MAP[targetPackageId];
 
-    console.log(`[PACKAGE_VALIDATED] Package: ${targetPackageId} (${pkg.credits} credits, ₹${pkg.amountINR} INR)`);
+    // Resolve target currency & price info
+    const upperCurrency = String(reqCurrency).toUpperCase();
+    const selectedCurrency = pkg.prices[upperCurrency] ? upperCurrency : "INR";
+    const priceInfo = pkg.prices[selectedCurrency] || pkg.prices.INR;
+
+    // Convert amount to smallest subunit (e.g., $4.99 -> 499 cents, ₹399 -> 39900 paise)
+    const amountInSubunits = Math.round(priceInfo.price * 100);
+
+    console.log(`[PACKAGE_VALIDATED] Package: ${targetPackageId} (${pkg.credits} credits, ${priceInfo.formatted} ${selectedCurrency})`);
 
     const rzpConfig = getRazorpayInstance();
     if (!rzpConfig) {
@@ -1325,25 +1299,23 @@ const handleCreateOrder = async (req: express.Request, res: express.Response) =>
       });
     }
 
-    const amountInPaise = pkg.amountINR * 100;
     const receiptId = `rcpt_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
 
-    console.log(`[RAZORPAY_ORDER_REQUEST_STARTED] Contacting Razorpay API for receipt: ${receiptId}`);
-
-    // Create Razorpay Order via Razorpay Node SDK
+    // Create Razorpay Order with selected currency & dynamic amount
     const order = await rzpConfig.instance.orders.create({
-      amount: amountInPaise,
-      currency: "INR",
+      amount: amountInSubunits,
+      currency: selectedCurrency,
       receipt: receiptId,
       notes: {
         uid: authUser.uid,
         accountEmail: authUser.email || "",
         packageId: targetPackageId,
+        currency: selectedCurrency,
         creditsToAdd: String(pkg.credits),
       },
     });
 
-    console.log(`[RAZORPAY_ORDER_CREATED] Razorpay Order ID created: ${order.id}`);
+    console.log(`[RAZORPAY_ORDER_CREATED] Razorpay Order ID created: ${order.id} (${selectedCurrency} ${priceInfo.price})`);
 
     // Store Order in fallback memory cache first
     const orderDocData = {
@@ -1351,8 +1323,8 @@ const handleCreateOrder = async (req: express.Request, res: express.Response) =>
       accountEmail: authUser.email || null,
       packageId: targetPackageId,
       creditsToAdd: pkg.credits,
-      amount: pkg.amountINR,
-      currency: "INR",
+      amount: priceInfo.price,
+      currency: selectedCurrency,
       razorpayOrderId: order.id,
       status: "created",
       credited: false,
@@ -1362,7 +1334,7 @@ const handleCreateOrder = async (req: express.Request, res: express.Response) =>
     };
     fallbackRazorpayOrders.set(order.id, orderDocData);
 
-    // Write Order to Firestore collection razorpayOrders/{orderId} safely
+    // Write Order to Firestore collection razorpayOrders/{orderId}
     try {
       await adminDb.collection("razorpayOrders").doc(order.id).set({
         ...orderDocData,
@@ -1370,10 +1342,10 @@ const handleCreateOrder = async (req: express.Request, res: express.Response) =>
       });
       console.log(`[FIRESTORE_ORDER_SAVED] Order document razorpayOrders/${order.id} saved for UID ${authUser.uid}`);
     } catch (fsErr: any) {
-      console.warn(`[FIRESTORE_ORDER_SAVE_WARN] Could not write order ${order.id} to Firestore (${fsErr?.message || fsErr}). Saved to fallback in-memory store.`);
+      console.warn(`[FIRESTORE_ORDER_SAVE_WARN] Could not write order ${order.id} to Firestore. Saved to fallback in-memory store.`);
     }
 
-    logTelemetry("credit_purchased", `Razorpay Order Created: ${order.id} for UID ${authUser.uid} (${pkg.credits} credits, ₹${pkg.amountINR} INR)`);
+    logTelemetry("credit_purchased", `Razorpay Order Created: ${order.id} for UID ${authUser.uid} (${pkg.credits} credits, ${selectedCurrency} ${priceInfo.price})`);
 
     return res.json({
       success: true,
@@ -1395,7 +1367,6 @@ const handleCreateOrder = async (req: express.Request, res: express.Response) =>
     });
   }
 };
-
 // Payment Verification Endpoint (Requires Authenticated Firebase User Token)
 const handleVerifyPayment = async (req: express.Request, res: express.Response) => {
   try {
@@ -1406,55 +1377,68 @@ const handleVerifyPayment = async (req: express.Request, res: express.Response) 
       return res.status(400).json({
         success: false,
         error: "MissingFields",
-        message: "Missing required fields (razorpay_order_id, razorpay_payment_id, razorpay_signature).",
+        message: "Missing required payment verification fields (razorpay_order_id, razorpay_payment_id, razorpay_signature).",
       });
     }
 
-    const keySecret = (process.env.RAZORPAY_KEY_SECRET || "p9jFLown9a7twCpkhmY1dMeR").trim();
+    const rzpConfig = getRazorpayInstance();
+    if (!rzpConfig) {
+      return res.status(500).json({
+        success: false,
+        error: "ConfigError",
+        message: "Server missing payment processing secrets.",
+      });
+    }
 
-    // Verify Razorpay HMAC-SHA256 signature
-    const generatedSignature = crypto
-      .createHmac("sha256", keySecret)
-      .update(`${razorpay_order_id}|${razorpay_payment_id}`)
+    // Verify HMAC SHA256 Signature
+    const body = `${razorpay_order_id}|${razorpay_payment_id}`;
+    const expectedSignature = crypto
+      .createHmac("sha256", rzpConfig.keySecret)
+      .update(body)
       .digest("hex");
 
-    if (generatedSignature !== razorpay_signature) {
-      logTelemetry("credit_purchased", `Razorpay Payment Verification Failed: Signature mismatch for order ${razorpay_order_id}`, "error");
+    const isSignatureValid = crypto.timingSafeEqual(
+      Buffer.from(expectedSignature, "utf-8"),
+      Buffer.from(razorpay_signature, "utf-8")
+    );
+
+    if (!isSignatureValid) {
+      console.error(`[PAYMENT_VERIFY_FAILED] Invalid signature for order ${razorpay_order_id}`);
       return res.status(400).json({
         success: false,
         error: "InvalidSignature",
-        message: "Razorpay payment verification failed: Invalid HMAC signature.",
+        message: "Payment verification failed. Security signature match failed.",
       });
     }
 
-    // Call atomic order fulfillment engine
-    const result = await fulfillRazorpayOrder(razorpay_order_id, razorpay_payment_id, authUser.uid);
+    // Fulfill the order and add user credits atomically
+    const fulfillment = await fulfillRazorpayOrder(
+      razorpay_order_id,
+      razorpay_payment_id,
+      authUser.uid
+    );
 
-    if (!result.success) {
+    if (!fulfillment.success) {
       return res.status(400).json({
         success: false,
-        error: "FulfillmentFailed",
-        message: result.error || "Failed to fulfill order and add credits.",
+        error: "FulfillmentError",
+        message: fulfillment.error || "Failed to add credits to account.",
       });
     }
 
     return res.json({
       success: true,
-      credits: result.newBalance,
-      email: authUser.email,
-      paymentId: razorpay_payment_id,
-      orderId: razorpay_order_id,
-      alreadyProcessed: result.alreadyProcessed,
-      message: result.alreadyProcessed
-        ? "Payment was already verified and processed."
-        : `Payment verified successfully! +${result.creditsAdded} credits added to your account.`,
+      message: "Payment verified and credits added successfully!",
+      creditsAdded: fulfillment.creditsAdded,
+      newBalance: fulfillment.newBalance,
+      alreadyProcessed: fulfillment.alreadyProcessed || false,
     });
   } catch (err: any) {
-    console.error("Razorpay Verification Endpoint Error:", err?.message || err);
+    console.error("[PAYMENT_VERIFY_ERROR]", err?.message || err);
     return res.status(500).json({
       success: false,
       error: "VerificationFailed",
-      message: err?.message || "Internal server error during payment verification.",
+      message: err?.message || "An error occurred during payment verification.",
     });
   }
 };
@@ -1462,7 +1446,7 @@ const handleVerifyPayment = async (req: express.Request, res: express.Response) 
 // Razorpay Webhook Endpoint
 app.post("/api/payments/razorpay/webhook", async (req, res) => {
   const webhookSignature = req.headers["x-razorpay-signature"] as string;
-  const webhookSecret = (process.env.RAZORPAY_WEBHOOK_SECRET || process.env.RAZORPAY_KEY_SECRET || "p9jFLown9a7twCpkhmY1dMeR").trim();
+  const webhookSecret = (process.env.RAZORPAY_WEBHOOK_SECRET || process.env.RAZORPAY_KEY_SECRET);
 
   if (!webhookSignature) {
     return res.status(400).json({ error: "MissingSignature", message: "x-razorpay-signature header missing" });
