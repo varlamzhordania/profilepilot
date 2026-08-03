@@ -1,6 +1,6 @@
 import dotenv from "dotenv";
 dotenv.config({ path: ".env.local" });
-dotenv.config(); // fallback to default .env if present
+dotenv.config();
 import express from "express";
 import path from "path";
 import crypto from "crypto";
@@ -8,12 +8,10 @@ import Razorpay from "razorpay";
 import nodemailer from "nodemailer";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
-import { initializeApp, getApps } from "firebase-admin/app";
-import { getFirestore, FieldValue } from "firebase-admin/firestore";
-import { getAuth } from "firebase-admin/auth";
+import { FieldValue } from "firebase-admin/firestore";
+import {  getAdminDb, getAdminAuth } from "./src/lib/firebase-admin.js";
 import fs from "fs";
 
-import firebaseConfigJson from "./firebase-applet-config.json" with { type: "json" };
 import { AnalysisResult, AnalyticsEvent, SystemMetrics, InspireStory } from "./src/types.js";
 import { INITIAL_INSPIRE_STORIES } from "./src/data/inspireStories.js";
 import {
@@ -31,22 +29,11 @@ process.on("uncaughtException", (err) => {
 
 // Initialize Express App
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;
 
 // Increase payload size for base64 image uploads
 app.use(express.json({ limit: "25mb" }));
 
-// Initialize Firebase Admin SDK
-if (!getApps().length) {
-  initializeApp({
-    projectId: firebaseConfigJson.projectId,
-  });
-}
-
-// Admin SDK connects to default database instance, with fallback to customDbId if needed
-export const adminDb = getFirestore();
-adminDb.settings({ ignoreUndefinedProperties: true });
-export const adminAuth = getAuth();
 
 // Initialize Gemini Client
 const ai = new GoogleGenAI({
@@ -57,6 +44,10 @@ const ai = new GoogleGenAI({
     },
   },
 });
+
+// Initialize Admin Firebase
+const adminDb = getAdminDb();
+const adminAuth = getAdminAuth();
 
 // ================= AUTHENTICATION MIDDLEWARE =================
 export interface AuthUser {
@@ -175,7 +166,7 @@ export async function getOrCreateCreditAccountDoc(uid: string) {
           updatedAt: FieldValue.serverTimestamp(),
         };
 
-        transaction.set(accountRef, initialData);
+        transaction.set(accountRef, initialData, { merge: true });
 
         // Record deterministic welcome grant transaction with fixed ID
         transaction.set(welcomeTxRef, {
@@ -191,7 +182,7 @@ export async function getOrCreateCreditAccountDoc(uid: string) {
 
         resultAccount = { uid, balance: 30, totalPurchased: 0, totalUsed: 0 };
       } else {
-        // Document ALREADY exists or welcome grant was previously recorded -> Do NOT add or reset credits!
+        // Document ALREADY exists or welcome grant was previously recorded
         const data = snap.exists ? snap.data()! : {};
         resultAccount = {
           uid: data.uid || uid,
@@ -199,6 +190,22 @@ export async function getOrCreateCreditAccountDoc(uid: string) {
           totalPurchased: typeof data.totalPurchased === "number" ? data.totalPurchased : 0,
           totalUsed: typeof data.totalUsed === "number" ? data.totalUsed : 0,
         };
+
+        if (!snap.exists) {
+          // If creditAccount doc is missing in Firestore, initialize it using set with merge
+          transaction.set(
+            accountRef,
+            {
+              uid,
+              balance: resultAccount.balance,
+              totalPurchased: resultAccount.totalPurchased,
+              totalUsed: resultAccount.totalUsed,
+              createdAt: FieldValue.serverTimestamp(),
+              updatedAt: FieldValue.serverTimestamp(),
+            },
+            { merge: true }
+          );
+        }
       }
     });
 
@@ -229,6 +236,12 @@ export async function getOrCreateCreditAccountDoc(uid: string) {
     return resultAccount;
   } catch (err: any) {
     const errMsg = err?.message || String(err);
+    console.error(`[getOrCreateCreditAccountDoc] Entering fallback mode for UID ${uid}:`, {
+      errorName: err?.name,
+      errorMessage: errMsg,
+      errorCode: err?.code,
+      stack: err?.stack,
+    });
     console.log(`[getOrCreateCreditAccountDoc] Firestore admin fallback active for ${uid} (${errMsg.split('\n')[0]})`);
     if (!fallbackCreditAccounts.has(uid)) {
       fallbackCreditAccounts.set(uid, { uid, balance: 30, totalPurchased: 0, totalUsed: 0 });
@@ -274,11 +287,16 @@ export async function deductCreditsAtomically(
       newBalance = balanceBefore - cost;
       const totalUsed = (typeof data.totalUsed === "number" ? data.totalUsed : 0) + cost;
 
-      transaction.update(accountRef, {
-        balance: newBalance,
-        totalUsed: totalUsed,
-        updatedAt: FieldValue.serverTimestamp(),
-      });
+      transaction.set(
+        accountRef,
+        {
+          uid,
+          balance: newBalance,
+          totalUsed: totalUsed,
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
 
       try {
         const txRef = adminDb.collection("creditTransactions").doc();
@@ -306,11 +324,16 @@ export async function deductCreditsAtomically(
           const cur = snap.data() || {};
           const bBefore = typeof cur.balance === "number" ? cur.balance : 0;
           const bAfter = bBefore + cost;
-          t.update(accountRef, {
-            balance: bAfter,
-            totalUsed: Math.max(0, (typeof cur.totalUsed === "number" ? cur.totalUsed : 0) - cost),
-            updatedAt: FieldValue.serverTimestamp(),
-          });
+          t.set(
+            accountRef,
+            {
+              uid,
+              balance: bAfter,
+              totalUsed: Math.max(0, (typeof cur.totalUsed === "number" ? cur.totalUsed : 0) - cost),
+              updatedAt: FieldValue.serverTimestamp(),
+            },
+            { merge: true }
+          );
         });
         logTelemetry("credit_refunded", `Refunded ${cost} credits to ${uid}.`);
       } catch (rErr) {
@@ -336,7 +359,7 @@ export async function deductCreditsAtomically(
       return { success: false, newBalance: balanceBefore, error: errorMsg, refundFn: async () => {} };
     }
 
-    // In-memory fallback if Firestore transaction throws error (such as 5 NOT_FOUND)
+    // In-memory fallback if Firestore transaction throws error
     const fallbackAcc = fallbackCreditAccounts.get(uid) || { uid, balance: 0, totalPurchased: 0, totalUsed: 0 };
     if (fallbackAcc.balance >= cost) {
       balanceBefore = fallbackAcc.balance;
@@ -360,6 +383,10 @@ export async function deductCreditsAtomically(
 
 // ================= RAZORPAY ORDER FULFILLMENT ENGINE =================
 
+// Track fulfilled payment IDs and order IDs in memory globally for double-fulfillment protection
+const processedPaymentIds = new Set<string>();
+const processedOrderIds = new Set<string>();
+
 export async function fulfillRazorpayOrder(
   razorpayOrderId: string,
   razorpayPaymentId: string,
@@ -376,11 +403,7 @@ export async function fulfillRazorpayOrder(
 
   // Check fallback store first for idempotency
   const fallbackOrder = fallbackRazorpayOrders.get(razorpayOrderId);
-  if (
-    fallbackOrder &&
-    (fallbackOrder.credited === true ||
-      fallbackOrder.lastFulfilledPaymentId === razorpayPaymentId)
-  ) {
+  if (fallbackOrder && (fallbackOrder.credited === true || fallbackOrder.lastFulfilledPaymentId === razorpayPaymentId)) {
     const targetUid = fallbackOrder.uid || authenticatedUid || "test_user_a";
     const fallbackAcc = fallbackCreditAccounts.get(targetUid);
     return {
@@ -404,47 +427,51 @@ export async function fulfillRazorpayOrder(
 
       const orderData = orderSnap.data()!;
 
-      // Requirement: Confirm that stored order UID equals the authenticated UID
+      // Confirm that stored order UID equals the authenticated UID
       if (authenticatedUid && orderData.uid !== authenticatedUid) {
         throw new Error(`This payment belongs to a different ProfilePilot account. Sign in using the account that started the purchase.`);
       }
 
-      const targetUid = orderData.uid;
-      const creditAccountRef = adminDb.collection("creditAccounts").doc(targetUid);
-
-      // Read both transaction record and credit account within the same transaction to guarantee consistency
-      const [paymentTxSnap, creditAccountSnap] = await Promise.all([
-        transaction.get(paymentTxRef),
-        transaction.get(creditAccountRef),
-      ]);
-
-      // Requirement: Check Idempotency - if order is already credited, return early without re-crediting
+      // Check Idempotency - if order is already credited or status is paid & credited, return early without re-crediting
       if (orderData.credited === true) {
         isAlreadyProcessed = true;
-        newBalance = creditAccountSnap.exists ? (creditAccountSnap.data()!.balance || 0) : 0;
+        const userRef = adminDb.collection("creditAccounts").doc(orderData.uid);
+        const userSnap = await transaction.get(userRef);
+        newBalance = userSnap.exists ? (userSnap.data()!.balance || 0) : 0;
         creditsAdded = 0;
         return;
       }
 
       // Check transaction record ID to prevent re-crediting same payment ID
+      const paymentTxSnap = await transaction.get(paymentTxRef);
       if (paymentTxSnap.exists) {
         isAlreadyProcessed = true;
-        newBalance = creditAccountSnap.exists ? (creditAccountSnap.data()!.balance || 0) : 0;
+        const userRef = adminDb.collection("creditAccounts").doc(orderData.uid);
+        const userSnap = await transaction.get(userRef);
+        newBalance = userSnap.exists ? (userSnap.data()!.balance || 0) : 0;
         creditsAdded = 0;
         return;
       }
 
+      const targetUid = orderData.uid;
       creditsAdded = typeof orderData.creditsToAdd === "number" ? orderData.creditsToAdd : 0;
 
-      // Update Razorpay order status atomically within transaction
-      transaction.update(orderRef, {
-        status: "paid",
-        credited: true,
-        razorpayPaymentId: razorpayPaymentId,
-        paidAt: FieldValue.serverTimestamp(),
-      });
+      // Update Razorpay order status atomically using set with merge
+      transaction.set(
+        orderRef,
+        {
+          status: "paid",
+          credited: true,
+          razorpayPaymentId: razorpayPaymentId,
+          paidAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
 
-      // Calculate new balance atomically
+      // Update User Credit Account atomically
+      const creditAccountRef = adminDb.collection("creditAccounts").doc(targetUid);
+      const creditAccountSnap = await transaction.get(creditAccountRef);
+
       let currentBalance = 0;
       let totalPurchased = 0;
       let totalUsed = 0;
@@ -492,7 +519,6 @@ export async function fulfillRazorpayOrder(
       fallbackOrder.credited = true;
       fallbackOrder.status = "paid";
       fallbackOrder.razorpayPaymentId = razorpayPaymentId;
-      fallbackOrder.lastFulfilledPaymentId = razorpayPaymentId;
     }
 
     if (!isAlreadyProcessed) {
@@ -531,18 +557,9 @@ export async function fulfillRazorpayOrder(
 
       const targetUid = fallbackOrder.uid || authenticatedUid || "test_user_a";
       const creditsToAdd = typeof fallbackOrder.creditsToAdd === "number" ? fallbackOrder.creditsToAdd : 45;
-      const fallbackAcc: FallbackCreditAccount = fallbackCreditAccounts.get(targetUid) || {
-        uid: targetUid,
-        balance: 30,
-        totalPurchased: 0,
-        totalUsed: 0,
-      };
+      const fallbackAcc: FallbackCreditAccount = fallbackCreditAccounts.get(targetUid) || { uid: targetUid, balance: 30, totalPurchased: 0, totalUsed: 0 };
 
-      if (
-        fallbackOrder.credited === true ||
-        fallbackOrder.lastFulfilledPaymentId === razorpayPaymentId ||
-        fallbackAcc.lastFulfilledPaymentId === razorpayPaymentId
-      ) {
+      if (fallbackOrder.credited === true || fallbackAcc.lastFulfilledPaymentId === razorpayPaymentId) {
         return {
           success: true,
           creditsAdded: 0,
@@ -554,7 +571,6 @@ export async function fulfillRazorpayOrder(
       fallbackOrder.credited = true;
       fallbackOrder.status = "paid";
       fallbackOrder.razorpayPaymentId = razorpayPaymentId;
-      fallbackOrder.lastFulfilledPaymentId = razorpayPaymentId;
 
       fallbackAcc.lastFulfilledPaymentId = razorpayPaymentId;
       fallbackAcc.balance += creditsToAdd;
@@ -578,6 +594,7 @@ export async function fulfillRazorpayOrder(
     };
   }
 }
+
 // Telemetry & Metrics Store
 let analyticsLogs: AnalyticsEvent[] = [
   {
@@ -1342,7 +1359,10 @@ const handleCreateOrder = async (req: express.Request, res: express.Response) =>
       });
       console.log(`[FIRESTORE_ORDER_SAVED] Order document razorpayOrders/${order.id} saved for UID ${authUser.uid}`);
     } catch (fsErr: any) {
-      console.warn(`[FIRESTORE_ORDER_SAVE_WARN] Could not write order ${order.id} to Firestore. Saved to fallback in-memory store.`);
+      console.warn(
+        `[FIRESTORE_ORDER_SAVE_WARN] Could not write order ${order.id} to Firestore. Reason: ${fsErr?.message || fsErr}. Saved to fallback in-memory store.`,
+        fsErr
+      );
     }
 
     logTelemetry("credit_purchased", `Razorpay Order Created: ${order.id} for UID ${authUser.uid} (${pkg.credits} credits, ${selectedCurrency} ${priceInfo.price})`);

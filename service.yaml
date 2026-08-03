@@ -1,0 +1,133 @@
+﻿apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  annotations:
+    generativelanguage.googleapis.com/applet-id: 1429ed2f-a8ef-4a90-b04e-b3b0e79eb666
+    generativelanguage.googleapis.com/type: fullstack-applet
+    run.googleapis.com/build-enable-automatic-updates: 'false'
+    run.googleapis.com/ingress: all
+    run.googleapis.com/ingress-status: all
+    run.googleapis.com/invoker-iam-disabled: 'true'
+    run.googleapis.com/maxScale: '1'
+    run.googleapis.com/urls: '["https://profilepilot-1098340811502.us-west1.run.app","https://profilepilot-wkseilm54q-uw.a.run.app"]'
+  labels:
+    cloud.googleapis.com/location: us-west1
+  name: profilepilot
+  namespace: '1098340811502'
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/maxScale: '3'
+        autoscaling.knative.dev/minScale: '0'
+        run.googleapis.com/cpu-throttling: 'true'
+        run.googleapis.com/execution-environment: gen2
+        run.googleapis.com/sessionAffinity: 'true'
+      labels:
+        run.googleapis.com/startupProbeType: Custom
+    spec:
+      containerConcurrency: 1000
+      containers:
+      - args:
+        - -c
+        - if [ -f server.js ]; then node server.js; else npm start; fi
+        command:
+        - /bin/sh
+        env:
+        - name: SQL_DB_NAME
+          value: cloud_sql_production_database
+        - name: RAZORPAY_KEY_SECRET
+          value: p9jFLown9a7twCpkhmY1dMeR
+        - name: RAZORPAY_KEY_ID
+          value: rzp_live_TIQmvp6HTSHaDs
+        - name: ADMIN_SECRET_KEY
+          value: liljog
+        - name: VITE_RAZORPAY_KEY_ID
+          value: rzp_live_TIQmvp6HTSHaDs
+        - name: SQL_HOST
+          value: /app/cloudsql/rugged-provider-b5fd2:us-west1:ai-studio-1429ed2f
+        - name: SQL_PASSWORD
+          value: 6;%>\}e9/rhstB[h
+        - name: SQL_USER
+          value: ai_studio_app_user
+        - name: GEMINI_API_KEY
+          value: AQ.Ab8RN6Lh5FcqWbqtjc1sgHVueOZPISbc0zKYsOo4kYb-lI5P2Q
+        - name: APP_URL
+          value: https://profilepilot-1098340811502.us-west1.run.app
+        - name: SUPABASE_URL
+          value: https://hakgzdcimdzknmmfqiis.supabase.co
+        - name: VITE_SUPABASE_URL
+          value: https://hakgzdcimdzknmmfqiis.supabase.co
+        - name: SUPABASE_SECRET_KEY
+          value: sb_publishable_AWPWgZpr4Jhy22YV1u0sgQ_xwlaGwZm
+        - name: VITE_SUPABASE_ANON_KEY
+          value: sb_publishable_AWPWgZpr4Jhy22YV1u0sgQ_xwlaGwZm
+        - name: SUPABASE_PUBLISHABLE_KEY
+          value: sb_publishable_AWPWgZpr4Jhy22YV1u0sgQ_xwlaGwZm
+        - name: SUPABASE_JWKS_URL
+          value: https://hakgzdcimdzknmmfqiis.supabase.co/auth/v1/.well-known/jwks.json
+        image: us-central1-docker.pkg.dev/rugged-provider-b5fd2/profilepilot/profilepilot:latest
+        name: app-container
+        ports:
+        - containerPort: 3000
+          name: http1
+        resources:
+          limits:
+            cpu: '1'
+            memory: 3Gi
+        startupProbe:
+          failureThreshold: 10
+          periodSeconds: 1
+          tcpSocket:
+            port: 3000
+          timeoutSeconds: 1
+        volumeMounts:
+        - mountPath: /app/cloudsql
+          name: cloudsql-volume
+      - args:
+        - rugged-provider-b5fd2:us-west1:ai-studio-1429ed2f
+        - --unix-socket=/app/cloudsql
+        - --sql-data
+        - --sql-data-endpoint=sqladmin.googleapis.com
+        - --sqladmin-api-endpoint=sqladmin.googleapis.com
+        env:
+        - name: CSQL_PROXY_HTTP_ADDRESS
+          value: 0.0.0.0
+        - name: CSQL_PROXY_HEALTH_CHECK
+          value: 'true'
+        - name: CSQL_PROXY_HTTP_PORT
+          value: '9801'
+        image: gcr.io/cloud-sql-connectors/cloud-sql-proxy:latest
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /liveness
+            port: 9801
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 1
+        name: cloud-sql-proxy
+        resources:
+          limits:
+            cpu: '0.5'
+            memory: 256Mi
+        startupProbe:
+          failureThreshold: 60
+          httpGet:
+            path: /startup
+            port: 9801
+          periodSeconds: 2
+          successThreshold: 1
+          timeoutSeconds: 1
+        volumeMounts:
+        - mountPath: /app/cloudsql
+          name: cloudsql-volume
+      serviceAccountName: 1098340811502-compute@developer.gserviceaccount.com
+      timeoutSeconds: 300
+      volumes:
+      - emptyDir:
+          medium: Memory
+        name: cloudsql-volume
+  traffic:
+  - latestRevision: true
+    percent: 100

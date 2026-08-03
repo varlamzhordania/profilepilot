@@ -1,0 +1,46 @@
+# Dependency directories
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Production build output
+dist/
+build/
+
+# Local Environment & Secrets
+.env
+.env.local
+.env.*.local
+
+# Firebase Credentials & Local Configs
+*.pem
+*.key
+
+# Version Control
+.git/
+.gitignore
+.gitattributes
+
+# IDE & Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS System files
+.DS_Store
+Thumbs.db
+
+# Docker files
+Dockerfile
+.dockerignore
+docker-compose*.yml
+
+# Telemetry / Logs
+logs/
+*.log
+
+venv
+venv/
