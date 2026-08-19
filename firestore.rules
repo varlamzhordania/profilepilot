@@ -12,8 +12,14 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    // Razorpay Orders: users can ONLY read their own orders; writes are server-only
+    // Legacy Razorpay Orders: users can ONLY read their own orders; writes are server-only
     match /razorpayOrders/{orderId} {
+      allow read: if request.auth != null && resource.data.uid == request.auth.uid;
+      allow create, update, delete: if false;
+    }
+
+    // Universal Payment Orders (Razorpay, PayPal, Stripe, etc.)
+    match /orders/{orderId} {
       allow read: if request.auth != null && resource.data.uid == request.auth.uid;
       allow create, update, delete: if false;
     }

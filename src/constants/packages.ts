@@ -78,11 +78,38 @@ export const SERVER_PACKAGE_MAP: Record<string, ServerPackage> = {
   },
 };
 
-/**
- * Array helper for frontend rendering (deduplicates aliases like `starter` / `starter_refill`)
- */
 export const CREDIT_PACKAGES_LIST: ServerPackage[] = [
   SERVER_PACKAGE_MAP.starter_refill,
   SERVER_PACKAGE_MAP.pro_wingman,
   SERVER_PACKAGE_MAP.ultimate_rizz,
+];
+
+export type PaymentGateway = 'razorpay' | 'paypal';
+
+export interface PaymentGatewayConfig {
+  id: PaymentGateway;
+  name: string;
+  description: string;
+  icon: string;
+  supportedCurrencies: string[];
+  enabled: boolean;
+}
+
+export const PAYMENT_GATEWAYS: PaymentGatewayConfig[] = [
+  {
+    id: 'razorpay',
+    name: 'Razorpay',
+    description: 'UPI, Debit/Credit Cards, NetBanking, Wallets',
+    icon: '💳',
+    supportedCurrencies: ['INR', 'USD'],
+    enabled: true,
+  },
+  {
+    id: 'paypal',
+    name: 'PayPal',
+    description: 'PayPal Balance, Credit/Debit Cards, Pay in 4',
+    icon: '🅿️',
+    supportedCurrencies: ['USD', 'EUR', 'GBP', 'CAD', 'AUD'],
+    enabled: true,
+  },
 ];
