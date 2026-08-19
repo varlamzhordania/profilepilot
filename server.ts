@@ -406,7 +406,7 @@ export async function fulfillOrder(
 }> {
   const paymentTxRef = adminDb.collection("creditTransactions").doc(`${gateway}_payment_${gatewayPaymentId}`);
 
-  // Check fallback store first for idempotency
+
   const fallbackOrder = fallbackOrders.get(orderId);
   if (fallbackOrder && (fallbackOrder.credited === true || fallbackOrder.lastFulfilledPaymentId === gatewayPaymentId)) {
     const targetUid = fallbackOrder.uid || authenticatedUid || "test_user_a";
@@ -425,7 +425,6 @@ export async function fulfillOrder(
 
   try {
     await adminDb.runTransaction(async (transaction) => {
-      // Safe Fallback Resolution: Check `orders` first, then legacy `razorpayOrders` if not found.
       const universalOrderRef = adminDb.collection("orders").doc(orderId);
       const legacyOrderRef = adminDb.collection("razorpayOrders").doc(orderId);
 
@@ -447,10 +446,12 @@ export async function fulfillOrder(
         throw new Error(`This payment belongs to a different ProfilePilot account. Sign in using the account that started the purchase.`);
       }
 
+      const targetUid = orderData.uid;
+      const creditAccountRef = adminDb.collection("creditAccounts").doc(targetUid);
+
       if (orderData.credited === true) {
         isAlreadyProcessed = true;
-        const userRef = adminDb.collection("creditAccounts").doc(orderData.uid);
-        const userSnap = await transaction.get(userRef);
+        const userSnap = await transaction.get(creditAccountRef);
         newBalance = userSnap.exists ? (userSnap.data()!.balance || 0) : 0;
         creditsAdded = 0;
         return;
@@ -459,32 +460,16 @@ export async function fulfillOrder(
       const paymentTxSnap = await transaction.get(paymentTxRef);
       if (paymentTxSnap.exists) {
         isAlreadyProcessed = true;
-        const userRef = adminDb.collection("creditAccounts").doc(orderData.uid);
-        const userSnap = await transaction.get(userRef);
+        const userSnap = await transaction.get(creditAccountRef);
         newBalance = userSnap.exists ? (userSnap.data()!.balance || 0) : 0;
         creditsAdded = 0;
         return;
       }
 
-      const targetUid = orderData.uid;
-      creditsAdded = typeof orderData.creditsToAdd === "number" ? orderData.creditsToAdd : 0;
-
-      // Update Order Status atomically (works for both legacy and new collections)
-      transaction.set(
-        activeOrderRef,
-        {
-          status: "paid",
-          credited: true,
-          gatewayPaymentId: gatewayPaymentId,
-          razorpayPaymentId: gatewayPaymentId, // Keep for legacy compatibility
-          paidAt: FieldValue.serverTimestamp(),
-        },
-        { merge: true }
-      );
-
-      // Update User Credit Account atomically
-      const creditAccountRef = adminDb.collection("creditAccounts").doc(targetUid);
+      // Read user credit account BEFORE any writes occur
       const creditAccountSnap = await transaction.get(creditAccountRef);
+
+      creditsAdded = typeof orderData.creditsToAdd === "number" ? orderData.creditsToAdd : 0;
 
       let currentBalance = 0;
       let totalPurchased = 0;
@@ -501,6 +486,21 @@ export async function fulfillOrder(
       newBalance = currentBalance + creditsAdded;
       const updatedTotalPurchased = totalPurchased + creditsAdded;
 
+
+      // Update Order Status
+      transaction.set(
+        activeOrderRef,
+        {
+          status: "paid",
+          credited: true,
+          gatewayPaymentId: gatewayPaymentId,
+          razorpayPaymentId: gatewayPaymentId,
+          paidAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+
+      // Update User Credit Account
       transaction.set(
         creditAccountRef,
         {
@@ -513,7 +513,7 @@ export async function fulfillOrder(
         { merge: true }
       );
 
-      // Create creditTransactions record with deterministic ID
+      // Create Transaction Record
       transaction.set(paymentTxRef, {
         uid: targetUid,
         type: "purchase",
