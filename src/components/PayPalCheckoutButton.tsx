@@ -160,6 +160,7 @@ export const PayPalCheckoutButton: React.FC<PayPalCheckoutButtonProps> = ({
     }
 
     const clientId = (import.meta as any).env?.VITE_PAYPAL_CLIENT_ID || 'test';
+    const environment = (import.meta as any).env?.VITE_PAYPAL_MODE;
     const initialCurrency = (PAYPAL_SUPPORTED_CURRENCIES as readonly string[]).includes(currencyCode)
         ? currencyCode
         : 'USD';
@@ -172,6 +173,7 @@ export const PayPalCheckoutButton: React.FC<PayPalCheckoutButtonProps> = ({
                     currency: initialCurrency,
                     intent: 'capture',
                     components: 'buttons',
+                    environment: environment == "live" ? "production" : "sandbox"
                 }}
             >
                 <PayPalButtonWrapper
