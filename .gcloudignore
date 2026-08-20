@@ -1,0 +1,42 @@
+# Git repository metadata
+.git
+.gitignore
+
+# Environment variables & secrets
+.env
+.env.local
+.env.*.local
+*.env
+*.pem
+*.key
+
+# Local dependencies & caches (installed inside Docker during build)
+node_modules/
+.npm/
+.bun/
+
+venv
+venv/
+
+# Build artifacts & temp files
+dist/
+build/
+.cache/
+*.tsbuildinfo
+
+# IDE & OS-specific files
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Documentation & metadata not required for container runtime
+README.md
+metadata.json
+
+# Cloud / Local config files not used directly in container build
+#firebase-blueprint.json
+#firebase-applet-config.json
+#service.yaml
